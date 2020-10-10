@@ -131,10 +131,11 @@ def get_request(service, fid, mimeType):
         promptMessage = 'Choose type to export to \n(ENTER to select, s to stop):'
         title = promptMessage
         options = [x for x in mimeTypes.keys()]
-        picker = Picker(options, title, indicator='=>', default_index=0)
-        picker.register_custom_handler(ord('s'), go_back)
-        chosen, index = picker.start()
-        if index != -1:
+        # picker = Picker(options, title, indicator='=>', default_index=0)
+        # picker.register_custom_handler(ord('s'), go_back)
+        # chosen, index = picker.start()
+        chosen = next(iter(mimeTypes))
+        if True:
             request = service.files().export_media(
                 fileId=fid, mimeType=mimeTypes[chosen])
             return request, str("." + chosen)
@@ -306,34 +307,43 @@ def create_dir(cwd, pid, name):
 
 
 def file_download(item, cwd, clone=False):
-    token = os.path.join(dirpath, 'token.json')
-    store = file.Storage(token)
-    creds = store.get()
-    service = build('drive', 'v3', http=creds.authorize(Http()))
-    fid = item['id']
-    fname = item['name']
-    fh = io.BytesIO()
-    click.echo("Preparing: " + click.style(fname, fg='red') + " for download")
-    request, ext = get_request(service, fid, item['mimeType'])
-    file_path = (os.path.join(cwd, fname) + ext)
-    if(not clone and (os.path.exists(file_path)) and (not write_needed(file_path, item))):
-        return
-    downloader = MediaIoBaseDownload(fh, request)
-    done = False
-    with click.progressbar(length=100, label='downloading file') as bar:
-        pstatus = 0
-        while done is False:
-            status, done = downloader.next_chunk()
-            status = int(status.progress() * 100)
-            bar.update(int(status - pstatus))
-            pstatus = status
-        with open(file_path, 'wb') as f:
-            f.write(fh.getvalue())
-    data = drive_data()
-    data[file_path] = {'id': item['id'], 'time': time.time()}
-    drive_data(data)
-    click.secho("completed download of " + fname, fg='yellow')
+    try:
+        token = os.path.join(dirpath, 'token.json')
+        store = file.Storage(token)
+        creds = store.get()
+        service = build('drive', 'v3', http=creds.authorize(Http()))
+        fid = item['id']
+        fname = item['name']
+        fh = io.BytesIO()
+        click.echo("Preparing: " + click.style(fname, fg='red') + " for download")
+        request, ext = get_request(service, fid, item['mimeType'])
+        file_path = (os.path.join(cwd, fname) + ext)
+        if(not clone and (os.path.exists(file_path)) and (not write_needed(file_path, item))):
+            return
+        downloader = MediaIoBaseDownload(fh, request)
+        done = False
+        with click.progressbar(length=100, label='downloading file') as bar:
+            pstatus = 0
+            while done is False:
+                status, done = downloader.next_chunk()
+                status = int(status.progress() * 100)
+                bar.update(int(status - pstatus))
+                pstatus = status
+            with open(file_path, 'wb') as f:
+                f.write(fh.getvalue())
+        data = drive_data()
+        data[file_path] = {'id': item['id'], 'time': time.time()}
+        drive_data(data)
+        click.secho("completed download of " + fname, fg='yellow')
+    except: 
+        print("Unexpected error:", sys.exc_info()[0])
+        print(item, cwd, clone)
+        print("WAITING FOR 2 MINUTES")
+        time.sleep(120)
+        print("RETRYING FILE")
+        file_download(item, cwd, clone)
 
+        
 
 def concat(fid):
     token = os.path.join(dirpath, 'token.json')
@@ -417,6 +427,7 @@ def pull_content(cwd, fid):
         if page_token is None:
             break
     for item in lis:
+        item['name'] = item['name'].replace("/","-")
         dir_name = os.path.join(cwd, item['name'])
         if(item['mimeType'] != 'application/vnd.google-apps.folder'):
             if((not os.path.exists(dir_name)) or write_needed(dir_name, item)):
